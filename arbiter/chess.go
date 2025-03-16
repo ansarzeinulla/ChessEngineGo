@@ -610,7 +610,7 @@ func isValidPromotion(promotionPiece int) bool {
 	return false
 }
 
-// Validates if a king's move is legal (ignoring check situations)
+// Validates if a king's move is legal
 func isValidKingMove(arbiter *ChessArbiter, move [3]uint64) bool {
 	// Get bit positions
 	fromPos := findSetBit(move[0])
@@ -624,9 +624,28 @@ func isValidKingMove(arbiter *ChessArbiter, move [3]uint64) bool {
 	rankDiff := abs(toRank - fromRank)
 	fileDiff := abs(toFile - fromFile)
 
+	// Player color
+	kingPiece, kingColor := getPieceAtPosition(arbiter, fromPos)
+
 	// Regular king move: one square in any direction
 	if rankDiff <= 1 && fileDiff <= 1 {
-		// IMPORTANT: CHECK IF THIS MOVE WOULD PUT THE KING IN CHECK
+		// Create a buffer arbiter to check if the destination square is under attack
+		bufferArbiter := *arbiter
+
+		// Temporarily remove the king from its current position
+		bufferArbiter.BoardwithParameters.Board[kingPiece] &= ^move[0]
+
+		// Temporarily place the king at the destination
+		bufferArbiter.BoardwithParameters.Board[kingPiece] |= move[1]
+
+		// Switch turn to see if opponent can attack the king at this position
+		bufferArbiter.BoardwithParameters.TurnOfPlayer = 1 - kingColor
+
+		// Check if the king would be in check at the destination
+		if IsCheck(&bufferArbiter) {
+			return false // Cannot move into check
+		}
+
 		return true
 	}
 
@@ -638,10 +657,13 @@ func isValidKingMove(arbiter *ChessArbiter, move [3]uint64) bool {
 	if rankDiff == 0 && fileDiff == 2 {
 		// White king
 		if turnOfPlayer == 0 && fromRank == 0 && fromFile == 4 {
+			// First check if the king is currently in check
+			if IsCheck(arbiter) {
+				return false // Cannot castle out of check
+			}
+
 			// Check if castling is allowed according to flags
 			if toFile == 6 { // Kingside castling
-				// CHECK IF THE KING IS CURRENTLY IN CHECK - CANNOT CASTLE OUT OF CHECK
-
 				// Check if kingside castling is allowed
 				if arbiter.BoardwithParameters.WhiteCastle&1 == 0 {
 					return false // Kingside castling not allowed for white
@@ -660,9 +682,28 @@ func isValidKingMove(arbiter *ChessArbiter, move [3]uint64) bool {
 					return false // Path is not clear
 				}
 
-				// CHECK IF KING PASSES THROUGH CHECK DURING CASTLING - F1 SQUARE
+				// Check if king passes through check during castling (F1 square)
+				bufferArbiter := *arbiter
+				// Move king to f1 temporarily
+				f1Bitboard := uint64(1) << squareF1
+				bufferArbiter.BoardwithParameters.Board[WhiteKing] &= ^move[0]   // Remove from e1
+				bufferArbiter.BoardwithParameters.Board[WhiteKing] |= f1Bitboard // Place on f1
 
-				// CHECK IF KING WOULD END UP IN CHECK AFTER CASTLING - G1 SQUARE
+				bufferArbiter.BoardwithParameters.TurnOfPlayer = 1 // Black's turn to check if king would be in check
+				if IsCheck(&bufferArbiter) {
+					return false // Cannot castle through check
+				}
+
+				// Check if king would end up in check after castling (G1 square)
+				bufferArbiter = *arbiter // Reset buffer
+				g1Bitboard := uint64(1) << squareG1
+				bufferArbiter.BoardwithParameters.Board[WhiteKing] &= ^move[0]   // Remove from e1
+				bufferArbiter.BoardwithParameters.Board[WhiteKing] |= g1Bitboard // Place on g1
+
+				bufferArbiter.BoardwithParameters.TurnOfPlayer = 1 // Black's turn to check if king would be in check
+				if IsCheck(&bufferArbiter) {
+					return false // Cannot castle into check
+				}
 
 				// Check if rook is actually there
 				rookPos := 7 // h1 square
@@ -675,8 +716,6 @@ func isValidKingMove(arbiter *ChessArbiter, move [3]uint64) bool {
 			}
 
 			if toFile == 2 { // Queenside castling
-				// CHECK IF THE KING IS CURRENTLY IN CHECK - CANNOT CASTLE OUT OF CHECK
-
 				// Check if queenside castling is allowed
 				if arbiter.BoardwithParameters.WhiteCastle&2 == 0 {
 					return false // Queenside castling not allowed for white
@@ -701,9 +740,28 @@ func isValidKingMove(arbiter *ChessArbiter, move [3]uint64) bool {
 					return false // Path is not clear
 				}
 
-				// CHECK IF KING PASSES THROUGH CHECK DURING CASTLING - D1 SQUARE
+				// Check if king passes through check during castling (D1 square)
+				bufferArbiter := *arbiter
+				// Move king to d1 temporarily
+				d1Bitboard := uint64(1) << squareD1
+				bufferArbiter.BoardwithParameters.Board[WhiteKing] &= ^move[0]   // Remove from e1
+				bufferArbiter.BoardwithParameters.Board[WhiteKing] |= d1Bitboard // Place on d1
 
-				// CHECK IF KING WOULD END UP IN CHECK AFTER CASTLING - C1 SQUARE
+				bufferArbiter.BoardwithParameters.TurnOfPlayer = 1 // Black's turn to check if king would be in check
+				if IsCheck(&bufferArbiter) {
+					return false // Cannot castle through check
+				}
+
+				// Check if king would end up in check after castling (C1 square)
+				bufferArbiter = *arbiter // Reset buffer
+				c1Bitboard := uint64(1) << squareC1
+				bufferArbiter.BoardwithParameters.Board[WhiteKing] &= ^move[0]   // Remove from e1
+				bufferArbiter.BoardwithParameters.Board[WhiteKing] |= c1Bitboard // Place on c1
+
+				bufferArbiter.BoardwithParameters.TurnOfPlayer = 1 // Black's turn to check if king would be in check
+				if IsCheck(&bufferArbiter) {
+					return false // Cannot castle into check
+				}
 
 				// Check if rook is actually there
 				rookPos := 0 // a1 square
@@ -718,10 +776,13 @@ func isValidKingMove(arbiter *ChessArbiter, move [3]uint64) bool {
 
 		// Black king
 		if turnOfPlayer == 1 && fromRank == 7 && fromFile == 4 {
+			// First check if the king is currently in check
+			if IsCheck(arbiter) {
+				return false // Cannot castle out of check
+			}
+
 			// Check if castling is allowed according to flags
 			if toFile == 6 { // Kingside castling
-				// CHECK IF THE KING IS CURRENTLY IN CHECK - CANNOT CASTLE OUT OF CHECK
-
 				// Check if kingside castling is allowed
 				if arbiter.BoardwithParameters.BlackCastle&1 == 0 {
 					return false // Kingside castling not allowed for black
@@ -740,9 +801,28 @@ func isValidKingMove(arbiter *ChessArbiter, move [3]uint64) bool {
 					return false // Path is not clear
 				}
 
-				// CHECK IF KING PASSES THROUGH CHECK DURING CASTLING - F8 SQUARE
+				// Check if king passes through check during castling (F8 square)
+				bufferArbiter := *arbiter
+				// Move king to f8 temporarily
+				f8Bitboard := uint64(1) << squareF8
+				bufferArbiter.BoardwithParameters.Board[BlackKing] &= ^move[0]   // Remove from e8
+				bufferArbiter.BoardwithParameters.Board[BlackKing] |= f8Bitboard // Place on f8
 
-				// CHECK IF KING WOULD END UP IN CHECK AFTER CASTLING - G8 SQUARE
+				bufferArbiter.BoardwithParameters.TurnOfPlayer = 0 // White's turn to check if king would be in check
+				if IsCheck(&bufferArbiter) {
+					return false // Cannot castle through check
+				}
+
+				// Check if king would end up in check after castling (G8 square)
+				bufferArbiter = *arbiter // Reset buffer
+				g8Bitboard := uint64(1) << squareG8
+				bufferArbiter.BoardwithParameters.Board[BlackKing] &= ^move[0]   // Remove from e8
+				bufferArbiter.BoardwithParameters.Board[BlackKing] |= g8Bitboard // Place on g8
+
+				bufferArbiter.BoardwithParameters.TurnOfPlayer = 0 // White's turn to check if king would be in check
+				if IsCheck(&bufferArbiter) {
+					return false // Cannot castle into check
+				}
 
 				// Check if rook is actually there
 				rookPos := 63 // h8 square
@@ -755,8 +835,6 @@ func isValidKingMove(arbiter *ChessArbiter, move [3]uint64) bool {
 			}
 
 			if toFile == 2 { // Queenside castling
-				// CHECK IF THE KING IS CURRENTLY IN CHECK - CANNOT CASTLE OUT OF CHECK
-
 				// Check if queenside castling is allowed
 				if arbiter.BoardwithParameters.BlackCastle&2 == 0 {
 					return false // Queenside castling not allowed for black
@@ -781,9 +859,28 @@ func isValidKingMove(arbiter *ChessArbiter, move [3]uint64) bool {
 					return false // Path is not clear
 				}
 
-				// CHECK IF KING PASSES THROUGH CHECK DURING CASTLING - D8 SQUARE
+				// Check if king passes through check during castling (D8 square)
+				bufferArbiter := *arbiter
+				// Move king to d8 temporarily
+				d8Bitboard := uint64(1) << squareD8
+				bufferArbiter.BoardwithParameters.Board[BlackKing] &= ^move[0]   // Remove from e8
+				bufferArbiter.BoardwithParameters.Board[BlackKing] |= d8Bitboard // Place on d8
 
-				// CHECK IF KING WOULD END UP IN CHECK AFTER CASTLING - C8 SQUARE
+				bufferArbiter.BoardwithParameters.TurnOfPlayer = 0 // White's turn to check if king would be in check
+				if IsCheck(&bufferArbiter) {
+					return false // Cannot castle through check
+				}
+
+				// Check if king would end up in check after castling (C8 square)
+				bufferArbiter = *arbiter // Reset buffer
+				c8Bitboard := uint64(1) << squareC8
+				bufferArbiter.BoardwithParameters.Board[BlackKing] &= ^move[0]   // Remove from e8
+				bufferArbiter.BoardwithParameters.Board[BlackKing] |= c8Bitboard // Place on c8
+
+				bufferArbiter.BoardwithParameters.TurnOfPlayer = 0 // White's turn to check if king would be in check
+				if IsCheck(&bufferArbiter) {
+					return false // Cannot castle into check
+				}
 
 				// Check if rook is actually there
 				rookPos := 56 // a8 square
@@ -953,6 +1050,44 @@ func DoMove(arbiter *ChessArbiter, move [3]uint64) {
 		doKingMove(arbiter, fromBitboard, toBitboard, fromPiece, fromColor)
 	case WhiteQueen, BlackQueen, WhiteRook, BlackRook, WhiteBishop, BlackBishop, WhiteKnight, BlackKnight:
 		doSimpleMove(arbiter, fromBitboard, toBitboard, fromPiece)
+	}
+
+	// After the move is executed, check if we need to update castling rights
+
+	// Check if a king has moved from its initial position
+	if fromPiece == WhiteKing {
+		arbiter.BoardwithParameters.WhiteCastle = 0 // White loses all castling rights
+	} else if fromPiece == BlackKing {
+		arbiter.BoardwithParameters.BlackCastle = 0 // Black loses all castling rights
+	}
+
+	// Check if a rook has moved or been captured
+	if fromPiece == WhiteRook {
+		// Check which rook moved
+		if fromPos == 0 { // a1 - queenside rook
+			arbiter.BoardwithParameters.WhiteCastle &= ^2 // Remove queenside castling right
+		} else if fromPos == 7 { // h1 - kingside rook
+			arbiter.BoardwithParameters.WhiteCastle &= ^1 // Remove kingside castling right
+		}
+	} else if fromPiece == BlackRook {
+		// Check which rook moved
+		if fromPos == 56 { // a8 - queenside rook
+			arbiter.BoardwithParameters.BlackCastle &= ^2 // Remove queenside castling right
+		} else if fromPos == 63 { // h8 - kingside rook
+			arbiter.BoardwithParameters.BlackCastle &= ^1 // Remove kingside castling right
+		}
+	}
+
+	// Check if a rook was captured
+	toPos := findSetBit(toBitboard)
+	if toPos == 0 { // a1 - white queenside rook
+		arbiter.BoardwithParameters.WhiteCastle &= ^2 // Remove white queenside castling right
+	} else if toPos == 7 { // h1 - white kingside rook
+		arbiter.BoardwithParameters.WhiteCastle &= ^1 // Remove white kingside castling right
+	} else if toPos == 56 { // a8 - black queenside rook
+		arbiter.BoardwithParameters.BlackCastle &= ^2 // Remove black queenside castling right
+	} else if toPos == 63 { // h8 - black kingside rook
+		arbiter.BoardwithParameters.BlackCastle &= ^1 // Remove black kingside castling right
 	}
 }
 
@@ -1140,7 +1275,7 @@ func clearCapturedPiece(arbiter *ChessArbiter, positionBitboard uint64) {
 	}
 }
 
-// IsCheck checks if the current player is in check
+// Modified IsCheck function that doesn't use GenerateValidMoves to avoid recursion
 func IsCheck(arbiter *ChessArbiter) bool {
 	// Get the current player's color
 	currentPlayerColor := arbiter.BoardwithParameters.TurnOfPlayer
@@ -1158,28 +1293,230 @@ func IsCheck(arbiter *ChessArbiter) bool {
 		return false
 	}
 
-	// Find the king's position as a bitboard (exactly one bit set)
+	// Find the king's position
 	kingPos := findSetBit(kingBitboard)
-	kingBitboard = uint64(1) << kingPos
 
-	// Temporarily switch the turn to the opponent to generate their moves
-	arbiter.BoardwithParameters.TurnOfPlayer = 1 - currentPlayerColor
+	// Temporarily switch the turn to the opponent
+	opponentColor := 1 - currentPlayerColor
+	originalTurn := arbiter.BoardwithParameters.TurnOfPlayer
+	arbiter.BoardwithParameters.TurnOfPlayer = opponentColor
 
-	// Generate all legal moves for the opponent
-	opponentMoves := GenerateValidMoves(arbiter)
+	// Check if the opponent can attack the king directly
+	isInCheck := isSquareAttacked(arbiter, kingPos, opponentColor)
 
 	// Restore the original turn
-	arbiter.BoardwithParameters.TurnOfPlayer = currentPlayerColor
+	arbiter.BoardwithParameters.TurnOfPlayer = originalTurn
 
-	// Check if any of the opponent's moves can capture the king
-	for _, move := range opponentMoves {
-		// If the destination of any move is the king's position, the king is in check
-		if move[1] == kingBitboard {
-			return true
+	return isInCheck
+}
+
+// isSquareAttacked checks if a square is under attack by any piece of the specified color
+// This avoids using GenerateValidMoves to prevent recursion
+func isSquareAttacked(arbiter *ChessArbiter, square int, attackerColor int) bool {
+	// Check pawn attacks
+	if attackerColor == 0 { // White attacking
+		// Check if black king is attacked by white pawns
+		// Pawns attack diagonally forward, so check one rank below and one file to the left/right
+		if square > 7 { // Not on the first rank
+			// Check if white pawn can attack from bottom-left
+			if square%8 > 0 { // Not on the a-file
+				pawnPos := square - 9 // One rank down, one file left
+				if pawnPos >= 0 {
+					pawnBit := uint64(1) << pawnPos
+					if arbiter.BoardwithParameters.Board[WhitePawn]&pawnBit != 0 {
+						return true
+					}
+				}
+			}
+
+			// Check if white pawn can attack from bottom-right
+			if square%8 < 7 { // Not on the h-file
+				pawnPos := square - 7 // One rank down, one file right
+				if pawnPos >= 0 {
+					pawnBit := uint64(1) << pawnPos
+					if arbiter.BoardwithParameters.Board[WhitePawn]&pawnBit != 0 {
+						return true
+					}
+				}
+			}
+		}
+	} else { // Black attacking
+		// Check if white king is attacked by black pawns
+		// Pawns attack diagonally forward, so check one rank above and one file to the left/right
+		if square < 56 { // Not on the last rank
+			// Check if black pawn can attack from top-left
+			if square%8 > 0 { // Not on the a-file
+				pawnPos := square + 7 // One rank up, one file left
+				if pawnPos < 64 {
+					pawnBit := uint64(1) << pawnPos
+					if arbiter.BoardwithParameters.Board[BlackPawn]&pawnBit != 0 {
+						return true
+					}
+				}
+			}
+
+			// Check if black pawn can attack from top-right
+			if square%8 < 7 { // Not on the h-file
+				pawnPos := square + 9 // One rank up, one file right
+				if pawnPos < 64 {
+					pawnBit := uint64(1) << pawnPos
+					if arbiter.BoardwithParameters.Board[BlackPawn]&pawnBit != 0 {
+						return true
+					}
+				}
+			}
 		}
 	}
 
-	// If no opponent move can capture the king, the king is not in check
+	// Get the knight piece index for the attacker color
+	knightPiece := WhiteKnight
+	if attackerColor == 1 {
+		knightPiece = BlackKnight
+	}
+
+	// Check knight attacks
+	knightOffsets := []int{-17, -15, -10, -6, 6, 10, 15, 17}
+	for _, offset := range knightOffsets {
+		attackPos := square + offset
+
+		// Make sure the position is valid and the knight's move is on the board
+		// (knights can jump 2 ranks and 1 file or 1 rank and 2 files)
+		if attackPos >= 0 && attackPos < 64 {
+			rankDiff := abs((attackPos / 8) - (square / 8))
+			fileDiff := abs((attackPos % 8) - (square % 8))
+
+			if (rankDiff == 2 && fileDiff == 1) || (rankDiff == 1 && fileDiff == 2) {
+				attackBit := uint64(1) << attackPos
+				if arbiter.BoardwithParameters.Board[knightPiece]&attackBit != 0 {
+					return true
+				}
+			}
+		}
+	}
+
+	// Get the pieces indices for the attacker color
+	kingPiece := WhiteKing
+	queenPiece := WhiteQueen
+	rookPiece := WhiteRook
+	bishopPiece := WhiteBishop
+
+	if attackerColor == 1 {
+		kingPiece = BlackKing
+		queenPiece = BlackQueen
+		rookPiece = BlackRook
+		bishopPiece = BlackBishop
+	}
+
+	// Check king attacks (one square in any direction)
+	kingOffsets := []int{-9, -8, -7, -1, 1, 7, 8, 9}
+	for _, offset := range kingOffsets {
+		attackPos := square + offset
+
+		if attackPos >= 0 && attackPos < 64 {
+			// Make sure we're not crossing the board edge
+			rankDiff := abs((attackPos / 8) - (square / 8))
+			fileDiff := abs((attackPos % 8) - (square % 8))
+
+			if rankDiff <= 1 && fileDiff <= 1 {
+				attackBit := uint64(1) << attackPos
+				if arbiter.BoardwithParameters.Board[kingPiece]&attackBit != 0 {
+					return true
+				}
+			}
+		}
+	}
+
+	// Check sliding pieces (rook, bishop, queen)
+
+	// Rook-like moves (horizontal and vertical)
+	directions := []int{-8, -1, 1, 8} // up, left, right, down
+
+	for _, dir := range directions {
+		pos := square
+
+		for i := 0; i < 7; i++ { // Maximum 7 steps in any direction
+			pos += dir
+
+			// Check if we're still on the board
+			if pos < 0 || pos >= 64 {
+				break
+			}
+
+			// Check if we've crossed a rank or file boundary
+			if dir == -1 || dir == 1 { // Horizontal move
+				if pos/8 != (pos-dir)/8 {
+					break // Crossed a rank boundary
+				}
+			}
+
+			posBit := uint64(1) << pos
+
+			// Check if there's a piece at this position
+			pieceFound := false
+			for p := 0; p < 12; p++ {
+				if arbiter.BoardwithParameters.Board[p]&posBit != 0 {
+					pieceFound = true
+
+					// Check if it's an attacking rook or queen
+					if p == rookPiece || p == queenPiece {
+						return true
+					}
+
+					break
+				}
+			}
+
+			if pieceFound {
+				break // Can't look further in this direction
+			}
+		}
+	}
+
+	// Bishop-like moves (diagonals)
+	directions = []int{-9, -7, 7, 9} // top-left, top-right, bottom-left, bottom-right
+
+	for _, dir := range directions {
+		pos := square
+
+		for i := 0; i < 7; i++ { // Maximum 7 steps in any direction
+			pos += dir
+
+			// Check if we're still on the board
+			if pos < 0 || pos >= 64 {
+				break
+			}
+
+			// Check if we've crossed a file boundary
+			rankDiff := abs((pos / 8) - ((pos - dir) / 8))
+			fileDiff := abs((pos % 8) - ((pos - dir) % 8))
+
+			if rankDiff != fileDiff || rankDiff != 1 {
+				break // Crossed a boundary improperly
+			}
+
+			posBit := uint64(1) << pos
+
+			// Check if there's a piece at this position
+			pieceFound := false
+			for p := 0; p < 12; p++ {
+				if arbiter.BoardwithParameters.Board[p]&posBit != 0 {
+					pieceFound = true
+
+					// Check if it's an attacking bishop or queen
+					if p == bishopPiece || p == queenPiece {
+						return true
+					}
+
+					break
+				}
+			}
+
+			if pieceFound {
+				break // Can't look further in this direction
+			}
+		}
+	}
+
 	return false
 }
 
@@ -1855,10 +2192,10 @@ func PlayGame(engine1, engine2 ChessEngine, fen string) string {
 			move[0] = boardMove[0] // Convert to bitboard representation
 			move[1] = boardMove[1]
 			move[2] = boardMove[2]
-			vvvv := GenerateValidMoves(arbiter)
-			fmt.Println(len(vvvv))
-			for _, move := range vvvv {
-				fmt.Println(uint64ToChessLocation(move[0]), uint64ToChessLocation(move[1]))
+			fmt.Println(IsCheck(arbiter))
+			vvv := GenerateValidMoves(arbiter)
+			for _, v := range vvv {
+				fmt.Println(uint64ToChessLocation(v[0]), uint64ToChessLocation(v[1]), v[2])
 			}
 			// Keep requesting moves until a valid one is provided
 			for !IsValidMove(arbiter, move) {
@@ -1867,8 +2204,8 @@ func PlayGame(engine1, engine2 ChessEngine, fen string) string {
 				move[1] = boardMove[1]
 				move[2] = boardMove[2]
 			}
+			return "Game ended in a draw (stalemate)"
 		} else {
-			return "INVALID negr"
 			// Black's turn (engine2)
 			boardMove := engine2.GetMove(arbiter.BoardwithParameters)
 			move[0] = boardMove[0] // Convert to bitboard representation
@@ -1876,7 +2213,6 @@ func PlayGame(engine1, engine2 ChessEngine, fen string) string {
 			move[2] = boardMove[2]
 			// Keep requesting moves until a valid one is provided
 			for !IsValidMove(arbiter, move) {
-				return "INVALID BLACK"
 				boardMove = engine2.GetMove(arbiter.BoardwithParameters)
 				move[0] = boardMove[0] // Convert to bitboard representation
 				move[1] = boardMove[1]
@@ -1885,10 +2221,7 @@ func PlayGame(engine1, engine2 ChessEngine, fen string) string {
 		}
 
 		// Execute the move
-		fmt.Println("MOve is ready")
 		DoMove(arbiter, move)
-		fmt.Println("MOVE IS DONE")
-		PrintBoardFromFEN(GameArbiterToFEN(arbiter))
 		// Check game ending conditions
 		if IsStaleMate(arbiter) {
 			return "Game ended in a draw (stalemate)"

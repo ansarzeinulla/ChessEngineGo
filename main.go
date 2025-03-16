@@ -13,7 +13,7 @@ func main() {
 	// Create two engine instances (dummy engines for now)
 	engine1Instance := &engine1.Engine{} // Renamed the variable to avoid conflict
 	engine2Instance := &engine2.Engine{} // Renamed the variable to avoid conflict
-	fen := "rnb1kbnr/pPp1pppp/3q4/3p4/8/8/PPPP1PPP/RNBQK2R w KQkq - 0 1"
+	fen := "1r4k1/1b3r2/p2nppp1/1qPN1Q1p/2pP4/4PPP1/1Kn3RP/2N5 w - - 0 1"
 
 	a := 0
 	result := ""
