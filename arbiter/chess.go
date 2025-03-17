@@ -369,26 +369,43 @@ func IsValidMove(arbiter *ChessArbiter, move [3]uint64) bool {
 	// 4. Check specific piece movement
 	switch fromPiece {
 	case WhitePawn, BlackPawn:
-		return isValidPawnMove(arbiter, move)
+		if !isValidPawnMove(arbiter, move) {
+			return false
+		}
 
 	case WhiteKing, BlackKing:
-		return isValidKingMove(arbiter, move)
+		if !isValidKingMove(arbiter, move) {
+			return false
+		}
 
 	case WhiteBishop, BlackBishop:
-		return isValidBishopMove(arbiter, move)
+		if !isValidBishopMove(arbiter, move) {
+			return false
+		}
 
 	case WhiteRook, BlackRook:
-		return isValidRookMove(arbiter, move)
+		if !isValidRookMove(arbiter, move) {
+			return false
+		}
 
 	case WhiteQueen, BlackQueen:
 		// Queen moves like bishop or rook
-		return isValidBishopMove(arbiter, move) || isValidRookMove(arbiter, move)
+		if !isValidBishopMove(arbiter, move) || isValidRookMove(arbiter, move) {
+			return false
+		}
 
 	case WhiteKnight, BlackKnight:
-		return isValidKnightMove(arbiter, move)
+		if !isValidKnightMove(arbiter, move) {
+			return false
+		}
 	}
 
-	return false
+	bufferarbiter := ChessArbiter{arbiter.BoardwithParameters}
+	DoMove(&bufferarbiter, move)
+	if IsCheck(&bufferarbiter) {
+		return false
+	}
+	return true
 }
 
 // Helper function to find the position of the set bit in a uint64
@@ -2192,11 +2209,11 @@ func PlayGame(engine1, engine2 ChessEngine, fen string) string {
 			move[0] = boardMove[0] // Convert to bitboard representation
 			move[1] = boardMove[1]
 			move[2] = boardMove[2]
-			fmt.Println(IsCheck(arbiter))
-			vvv := GenerateValidMoves(arbiter)
-			for _, v := range vvv {
-				fmt.Println(uint64ToChessLocation(v[0]), uint64ToChessLocation(v[1]), v[2])
-			}
+			// fmt.Println(IsCheck(arbiter))
+			// vvv := GenerateValidMoves(arbiter)
+			// for _, v := range vvv {
+			// 	fmt.Println(uint64ToChessLocation(v[0]), uint64ToChessLocation(v[1]), v[2])
+			// }
 			// Keep requesting moves until a valid one is provided
 			for !IsValidMove(arbiter, move) {
 				boardMove = engine1.GetMove(arbiter.BoardwithParameters)
@@ -2204,7 +2221,7 @@ func PlayGame(engine1, engine2 ChessEngine, fen string) string {
 				move[1] = boardMove[1]
 				move[2] = boardMove[2]
 			}
-			return "Game ended in a draw (stalemate)"
+			//return "Game ended in a draw (stalemate)"
 		} else {
 			// Black's turn (engine2)
 			boardMove := engine2.GetMove(arbiter.BoardwithParameters)

@@ -12,6 +12,249 @@ import (
 
 type Engine struct{}
 
+// DoMove executes a move on the board without checking validity
+func DoMove(arbiter *ChessArbiter, move [3]uint64) {
+	// Extract from and to positions
+	fromBitboard := move[0]
+	toBitboard := move[1]
+	promotionPiece := move[2]
+
+	// Get the piece type and color from the from position
+	fromPos := findSetBit(fromBitboard)
+	fromPiece, fromColor := getPieceAtPosition(arbiter, fromPos)
+
+	// Choose the appropriate move function based on piece type
+	switch fromPiece {
+	case WhitePawn, BlackPawn:
+		doPawnMove(arbiter, fromBitboard, toBitboard, fromPiece, fromColor, promotionPiece)
+	case WhiteKing, BlackKing:
+		doKingMove(arbiter, fromBitboard, toBitboard, fromPiece, fromColor)
+	case WhiteQueen, BlackQueen, WhiteRook, BlackRook, WhiteBishop, BlackBishop, WhiteKnight, BlackKnight:
+		doSimpleMove(arbiter, fromBitboard, toBitboard, fromPiece)
+	}
+
+	// After the move is executed, check if we need to update castling rights
+
+	// Check if a king has moved from its initial position
+	if fromPiece == WhiteKing {
+		arbiter.BoardwithParameters.WhiteCastle = 0 // White loses all castling rights
+	} else if fromPiece == BlackKing {
+		arbiter.BoardwithParameters.BlackCastle = 0 // Black loses all castling rights
+	}
+
+	// Check if a rook has moved or been captured
+	if fromPiece == WhiteRook {
+		// Check which rook moved
+		if fromPos == 0 { // a1 - queenside rook
+			arbiter.BoardwithParameters.WhiteCastle &= ^2 // Remove queenside castling right
+		} else if fromPos == 7 { // h1 - kingside rook
+			arbiter.BoardwithParameters.WhiteCastle &= ^1 // Remove kingside castling right
+		}
+	} else if fromPiece == BlackRook {
+		// Check which rook moved
+		if fromPos == 56 { // a8 - queenside rook
+			arbiter.BoardwithParameters.BlackCastle &= ^2 // Remove queenside castling right
+		} else if fromPos == 63 { // h8 - kingside rook
+			arbiter.BoardwithParameters.BlackCastle &= ^1 // Remove kingside castling right
+		}
+	}
+
+	// Check if a rook was captured
+	toPos := findSetBit(toBitboard)
+	if toPos == 0 { // a1 - white queenside rook
+		arbiter.BoardwithParameters.WhiteCastle &= ^2 // Remove white queenside castling right
+	} else if toPos == 7 { // h1 - white kingside rook
+		arbiter.BoardwithParameters.WhiteCastle &= ^1 // Remove white kingside castling right
+	} else if toPos == 56 { // a8 - black queenside rook
+		arbiter.BoardwithParameters.BlackCastle &= ^2 // Remove black queenside castling right
+	} else if toPos == 63 { // h8 - black kingside rook
+		arbiter.BoardwithParameters.BlackCastle &= ^1 // Remove black kingside castling right
+	}
+}
+
+// doSimpleMove handles basic piece movement (Knight, Bishop, Rook, Queen)
+func doSimpleMove(arbiter *ChessArbiter, fromBitboard, toBitboard uint64, pieceType int) {
+	// First clear any captured piece at the destination
+	clearCapturedPiece(arbiter, toBitboard)
+
+	// Remove the piece from its current position
+	arbiter.BoardwithParameters.Board[pieceType] &= ^fromBitboard
+
+	// Add the piece to its new position
+	arbiter.BoardwithParameters.Board[pieceType] |= toBitboard
+}
+
+// doPawnMove handles pawn movement with special cases (promotion, en passant)
+func doPawnMove(arbiter *ChessArbiter, fromBitboard, toBitboard uint64, pieceType, pieceColor int, promotionPiece uint64) {
+	fromPos := findSetBit(fromBitboard)
+	toPos := findSetBit(toBitboard)
+
+	// Check for en passant capture
+	if pieceColor == 0 && toBitboard == arbiter.BoardwithParameters.EnPassantBlack {
+		// White capturing black pawn via en passant
+		// Verify there's a black pawn to capture
+		capturedPawnPos := toPos - 8 // One rank below the en passant square
+		capturedPawnBitboard := uint64(1) << capturedPawnPos
+
+		// Only remove the pawn if it's actually a black pawn
+		if arbiter.BoardwithParameters.Board[BlackPawn]&capturedPawnBitboard != 0 {
+			arbiter.BoardwithParameters.Board[BlackPawn] &= ^capturedPawnBitboard
+		}
+	} else if pieceColor == 1 && toBitboard == arbiter.BoardwithParameters.EnPassantWhite {
+		// Black capturing white pawn via en passant
+		// Verify there's a white pawn to capture
+		capturedPawnPos := toPos + 8 // One rank above the en passant square
+		capturedPawnBitboard := uint64(1) << capturedPawnPos
+
+		// Only remove the pawn if it's actually a white pawn
+		if arbiter.BoardwithParameters.Board[WhitePawn]&capturedPawnBitboard != 0 {
+			arbiter.BoardwithParameters.Board[WhitePawn] &= ^capturedPawnBitboard
+		}
+	}
+
+	// Clear any normally captured piece at the destination
+	clearCapturedPiece(arbiter, toBitboard)
+
+	// Handle pawn promotion
+	if promotionPiece != 0 {
+		// Remove the pawn from its current position
+		arbiter.BoardwithParameters.Board[pieceType] &= ^fromBitboard
+
+		// Add the promoted piece to the destination
+		promotionPieceType := int(promotionPiece)
+		arbiter.BoardwithParameters.Board[promotionPieceType] |= toBitboard
+	} else {
+		// Normal pawn move
+		// Remove the pawn from its current position
+		arbiter.BoardwithParameters.Board[pieceType] &= ^fromBitboard
+
+		// Add the pawn to its new position
+		arbiter.BoardwithParameters.Board[pieceType] |= toBitboard
+	}
+
+	// Set en passant square if pawn moves two squares
+	fromRank, fromFile := fromPos/8, fromPos%8
+	toRank, _ := toPos/8, toPos%8
+
+	// Clear any existing en passant squares
+	arbiter.BoardwithParameters.EnPassantWhite = 0
+	arbiter.BoardwithParameters.EnPassantBlack = 0
+
+	// Check for double pawn move
+	if pieceColor == 0 && fromRank == 1 && toRank == 3 {
+		// White pawn moved two squares, set black's en passant square
+		enPassantSquare := (fromRank+1)*8 + fromFile
+		arbiter.BoardwithParameters.EnPassantBlack = uint64(1) << enPassantSquare
+	} else if pieceColor == 1 && fromRank == 6 && toRank == 4 {
+		// Black pawn moved two squares, set white's en passant square
+		enPassantSquare := (fromRank-1)*8 + fromFile
+		arbiter.BoardwithParameters.EnPassantWhite = uint64(1) << enPassantSquare
+	}
+}
+
+// doKingMove handles king movement with special cases (castling)
+func doKingMove(arbiter *ChessArbiter, fromBitboard, toBitboard uint64, pieceType, pieceColor int) {
+	fromPos := findSetBit(fromBitboard)
+	toPos := findSetBit(toBitboard)
+
+	// Convert to coordinates
+	_, fromFile := fromPos/8, fromPos%8
+	_, toFile := toPos/8, toPos%8
+
+	// Check for castling (king moves two squares horizontally)
+	if abs(toFile-fromFile) == 2 {
+		// Handle white castling
+		if pieceColor == 0 {
+			// Update castling rights
+			arbiter.BoardwithParameters.WhiteCastle = 0
+
+			if toFile > fromFile {
+				// Kingside castling
+				// Move the rook from h1 to f1
+				rookFromPos := 7 // h1
+				rookToPos := 5   // f1
+				rookFromBitboard := uint64(1) << rookFromPos
+				rookToBitboard := uint64(1) << rookToPos
+
+				// Remove rook from h1
+				arbiter.BoardwithParameters.Board[WhiteRook] &= ^rookFromBitboard
+
+				// Place rook on f1
+				arbiter.BoardwithParameters.Board[WhiteRook] |= rookToBitboard
+			} else {
+				// Queenside castling
+				// Move the rook from a1 to d1
+				rookFromPos := 0 // a1
+				rookToPos := 3   // d1
+				rookFromBitboard := uint64(1) << rookFromPos
+				rookToBitboard := uint64(1) << rookToPos
+
+				// Remove rook from a1
+				arbiter.BoardwithParameters.Board[WhiteRook] &= ^rookFromBitboard
+
+				// Place rook on d1
+				arbiter.BoardwithParameters.Board[WhiteRook] |= rookToBitboard
+			}
+		} else {
+			// Handle black castling
+			// Update castling rights
+			arbiter.BoardwithParameters.BlackCastle = 0
+
+			if toFile > fromFile {
+				// Kingside castling
+				// Move the rook from h8 to f8
+				rookFromPos := 63 // h8
+				rookToPos := 61   // f8
+				rookFromBitboard := uint64(1) << rookFromPos
+				rookToBitboard := uint64(1) << rookToPos
+
+				// Remove rook from h8
+				arbiter.BoardwithParameters.Board[BlackRook] &= ^rookFromBitboard
+
+				// Place rook on f8
+				arbiter.BoardwithParameters.Board[BlackRook] |= rookToBitboard
+			} else {
+				// Queenside castling
+				// Move the rook from a8 to d8
+				rookFromPos := 56 // a8
+				rookToPos := 59   // d8
+				rookFromBitboard := uint64(1) << rookFromPos
+				rookToBitboard := uint64(1) << rookToPos
+
+				// Remove rook from a8
+				arbiter.BoardwithParameters.Board[BlackRook] &= ^rookFromBitboard
+
+				// Place rook on d8
+				arbiter.BoardwithParameters.Board[BlackRook] |= rookToBitboard
+			}
+		}
+	}
+
+	// Update castling rights whenever the king moves
+	if pieceColor == 0 {
+		arbiter.BoardwithParameters.WhiteCastle = 0
+	} else {
+		arbiter.BoardwithParameters.BlackCastle = 0
+	}
+
+	// Clear any captured piece at the destination
+	clearCapturedPiece(arbiter, toBitboard)
+
+	// Remove the king from its current position
+	arbiter.BoardwithParameters.Board[pieceType] &= ^fromBitboard
+
+	// Add the king to its new position
+	arbiter.BoardwithParameters.Board[pieceType] |= toBitboard
+}
+
+// clearCapturedPiece removes any piece at the given position
+func clearCapturedPiece(arbiter *ChessArbiter, positionBitboard uint64) {
+	// Check each piece type to see if it's at the given position
+	for pieceType := 0; pieceType < 12; pieceType++ {
+		// If a piece of this type is at the position, remove it
+		arbiter.BoardwithParameters.Board[pieceType] &= ^positionBitboard
+	}
+}
 func chessLocationToUint64(notation string) uint64 {
 	// Validate input
 	if len(notation) != 2 {
@@ -101,26 +344,43 @@ func IsValidMove(arbiter *ChessArbiter, move [3]uint64) bool {
 	// 4. Check specific piece movement
 	switch fromPiece {
 	case WhitePawn, BlackPawn:
-		return isValidPawnMove(arbiter, move)
+		if !isValidPawnMove(arbiter, move) {
+			return false
+		}
 
 	case WhiteKing, BlackKing:
-		return isValidKingMove(arbiter, move)
+		if !isValidKingMove(arbiter, move) {
+			return false
+		}
 
 	case WhiteBishop, BlackBishop:
-		return isValidBishopMove(arbiter, move)
+		if !isValidBishopMove(arbiter, move) {
+			return false
+		}
 
 	case WhiteRook, BlackRook:
-		return isValidRookMove(arbiter, move)
+		if !isValidRookMove(arbiter, move) {
+			return false
+		}
 
 	case WhiteQueen, BlackQueen:
 		// Queen moves like bishop or rook
-		return isValidBishopMove(arbiter, move) || isValidRookMove(arbiter, move)
+		if !isValidBishopMove(arbiter, move) || isValidRookMove(arbiter, move) {
+			return false
+		}
 
 	case WhiteKnight, BlackKnight:
-		return isValidKnightMove(arbiter, move)
+		if !isValidKnightMove(arbiter, move) {
+			return false
+		}
 	}
 
-	return false
+	bufferarbiter := ChessArbiter{arbiter.BoardwithParameters}
+	DoMove(&bufferarbiter, move)
+	if IsCheck(&bufferarbiter) {
+		return false
+	}
+	return true
 }
 
 // Helper function to find the position of the set bit in a uint64
@@ -1876,7 +2136,7 @@ func getRandomElement(arr [][3]uint64) [3]uint64 {
 
 	// Get a random index
 	randomIndex := rand.Intn(len(arr))
-	time.Sleep(1 * time.Second)
+	time.Sleep(10 * time.Microsecond)
 	// Return the element at the random index
 	return arr[randomIndex]
 }
