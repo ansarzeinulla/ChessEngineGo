@@ -104,10 +104,6 @@ func (e *RandomEngine) playMove() {
 	}
 
 	moves := e.game.ValidMoves()
-
-	fmt.Fprintln(os.Stderr, "Turn to play:", e.game.Position().Turn())
-	fmt.Fprintln(os.Stderr, "Available moves:", len(moves))
-
 	if len(moves) == 0 {
 		fmt.Println("bestmove 0000")
 		return
