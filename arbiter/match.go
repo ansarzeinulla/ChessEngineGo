@@ -74,9 +74,9 @@ func (e *UCIEngine) Expect(substr string) {
 
 func (e *UCIEngine) GetBestMove(fen string, moves []string) string {
 	pos := "position fen " + fen
-	if len(moves) > 0 {
-		pos += " moves " + strings.Join(moves, " ")
-	}
+	// if len(moves) > 0 {
+	// 	pos += " moves " + strings.Join(moves, " ")
+	// }
 	e.Send(pos)
 	e.Send("go")
 
@@ -130,6 +130,7 @@ func RunMatch(enginePath, enginePath2 string) {
 
 		time.Sleep(300 * time.Millisecond)
 	}
+	fmt.Println(game.Position().Board().Draw())
 
 	fmt.Printf("\nGame Over: %s (%s)\n", game.Outcome(), game.Method())
 }

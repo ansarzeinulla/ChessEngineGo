@@ -19,20 +19,6 @@ func NewRandomEngine() *RandomEngine {
 	return &RandomEngine{game: chess.NewGame()}
 }
 
-// uciToMove converts a UCI string (e.g., "e2e4") into a valid move for the current position
-func uciToMove(game *chess.Game, uciStr string) *chess.Move {
-	for _, m := range game.ValidMoves() {
-		moveStr := m.S1().String() + m.S2().String()
-		if m.Promo() != chess.NoPieceType {
-			moveStr += strings.ToLower(m.Promo().String())
-		}
-		if moveStr == uciStr {
-			return m
-		}
-	}
-	return nil
-}
-
 // HandleInput routes a single UCI command string
 func (e *RandomEngine) HandleInput(input string) {
 	switch {
@@ -44,7 +30,7 @@ func (e *RandomEngine) HandleInput(input string) {
 		fmt.Println("readyok")
 	case strings.HasPrefix(input, "position"):
 		e.setPosition(input)
-	case input == "go":
+	case input[:2] == "go":
 		e.playMove()
 	case input == "quit":
 		os.Exit(0)

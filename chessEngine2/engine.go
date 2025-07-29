@@ -64,19 +64,6 @@ func (e *Engine) setPosition(cmd string) {
 	}
 }
 
-func uciToMove(game *chess.Game, uciStr string) *chess.Move {
-	for _, m := range game.ValidMoves() {
-		moveStr := m.S1().String() + m.S2().String()
-		if m.Promo() != chess.NoPieceType {
-			moveStr += strings.ToLower(m.Promo().String())
-		}
-		if moveStr == uciStr {
-			return m
-		}
-	}
-	return nil
-}
-
 func (e *Engine) makeMove() {
 	bestScore := -999999
 	var bestMove *chess.Move
