@@ -10,8 +10,7 @@ ChessEngineGo/
 │
 ├── engine1/         # First chess engine (Go)
 ├── engine2/         # Second chess engine (Go)
-├── arbiter.go       # Game manager that coordinates the match
-├── main.go          # Entry point
+├── arbiter/         # Game manager that coordinates the match
 └── ...
 
 
@@ -21,7 +20,7 @@ ChessEngineGo/
 
 To watch the two engines battle it out:
 
-go run .
+go run ./arbiter
 
 The arbiter will handle the game loop, alternating moves between engine1 and engine2, and enforce rules (basic or full depending on implementation).
 
