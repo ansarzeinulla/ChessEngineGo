@@ -21,7 +21,6 @@ type UCIEngine struct {
 
 func NewUCIEngine(path string) *UCIEngine {
 	cmd := exec.Command(path)
-	fmt.Println("W")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		log.Fatal(err)
@@ -93,7 +92,6 @@ func RunMatch(eng1, eng2 *UCIEngine) chess.Outcome {
 
 	for game.Outcome() == chess.NoOutcome {
 		fen := game.Position().String()
-
 		var bestMove string
 		if game.Position().Turn() == chess.White {
 			bestMove = eng1.GetBestMove(fen)

@@ -28,7 +28,7 @@ func (e *Engine) HandleInput(input string) {
 		fmt.Println("readyok")
 	case strings.HasPrefix(input, "position"):
 		e.setPosition(input)
-	case input == "go":
+	case input[:2] == "go":
 		e.makeMove()
 	case input == "quit":
 		os.Exit(0)

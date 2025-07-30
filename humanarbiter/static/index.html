@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess vs AI</title>
+    <style>
+        /* Chessboard Styles */
+        .chessboard {
+            display: grid;
+            grid-template-columns: repeat(8, 80px);
+            grid-template-rows: repeat(8, 80px);
+            gap: 0;
+            margin: 0px auto;
+            width: 640px;
+            height: 640px;
+        }
+        .square {
+            width: 80px;
+            height: 80px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 80px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        .light { background-color: #f0d9b5; }
+        .dark { background-color: #b58863; }
+        .highlight {
+            box-shadow: 0 0 10px 5px rgba(255, 255, 0, 0.8);
+        }
+        .promotion {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Chess vs AI</h1>
+    <div class="chessboard" id="chessboard"></div>
+
+    <div class="promotion">
+        <label>Promote Pawn:</label>
+        <input type="radio" name="promotion" value="null" checked> None
+        <input type="radio" name="promotion" value="q"> Queen
+        <input type="radio" name="promotion" value="r"> Rook
+        <input type="radio" name="promotion" value="b"> Bishop
+        <input type="radio" name="promotion" value="n"> Knight
+    </div>
+
+    <div id="move-history"></div>
+
+<script>
+    const chessboard = document.getElementById('chessboard');
+    const moveHistory = document.getElementById('move-history');
+    const ws = new WebSocket('ws://localhost:8080/ws');
+
+    let currentFEN = "startpos";  // Initial FEN (Standard Starting Position)
+    let moveHistoryList = [];
+    let firstClick = null; // Store first clicked square
+    let errorMessage = document.createElement('div');
+    errorMessage.id = 'error-message';
+    errorMessage.style.color = 'red';
+    document.body.appendChild(errorMessage);
+
+    // Initialize the chessboard based on the FEN string
+    function initBoard(fen) {
+        const pieces = {
+            'r': "♜", 'n': "♞", 'b': "♝", 'q': "♛", 'k': "♚", 'p': "♟",
+            'R': "♖", 'N': "♘", 'B': "♗", 'Q': "♕", 'K': "♔", 'P': "♙"
+        };
+
+        let board = '';
+        let row = 0;
+
+        // Default starting position if fen is "startpos"
+        if (fen === "startpos") {
+            fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        }
+
+        const ranks = fen.split(' ')[0].split('/'); // Split the FEN by '/' to get each rank (row)
+
+        for (let i = 0; i < 8; i++) {
+            let rank = ranks[i];
+            let col = 0;
+
+            for (let j = 0; j < rank.length; j++) {
+                const char = rank[j];
+
+                if (isNaN(char)) {
+                    // If it's a piece, render the corresponding piece symbol
+                    board += `<div class="square">${pieces[char]}</div>`;
+                    col++;
+                } else {
+                    // If it's a number, it means we need to skip that many empty squares
+                    col += parseInt(char);  // Skip over the empty squares (number means how many)
+                    for (let i = 0; i < parseInt(char); i++) {
+                        board += `<div class="square"></div>`;
+                    }
+                }
+            }
+
+            row++;
+        }
+
+        chessboard.innerHTML = board;  // Update the chessboard's HTML
+
+        // After board is initialized, add light/dark classes
+        addLightDarkClasses();
+    }
+
+    // Add light and dark classes after board is initialized
+    function addLightDarkClasses() {
+        const squares = document.querySelectorAll('.square');
+        let idx = 0;
+
+        squares.forEach(square => {
+            const row = Math.floor(idx / 8);
+            const col = idx % 8;
+
+            // Apply light/dark based on (row + col) % 2
+            if ((row + col) % 2 === 0) {
+                square.classList.add('light');
+            } else {
+                square.classList.add('dark');
+            }
+
+            // Attach the click handler directly during the traversal
+            square.onclick = function() {
+                handleClick(row, col, square.innerHTML);  // Use the row, col, and piece content (if any)
+            };
+
+            idx++;
+        });
+    }
+
+    // Handle first and second clicks
+    function handleClick(row, col, piece) {
+        const clickedCell = chessboard.children[row * 8 + col];
+
+        if (!firstClick) {
+            // If it's the first click, highlight the cell
+            clickedCell.classList.add('highlight');
+            firstClick = { row, col, piece };
+        } else {
+            // If it's the second click, register the move
+            const from = toChessNotation(firstClick.row, firstClick.col); // Convert first click to chess notation
+            const to = toChessNotation(row, col); // Convert second click to chess notation
+            const promotion = getPromotion(); // Get the promotion piece
+            const move = { 
+                from, 
+                to, 
+                piece: firstClick.piece, 
+                promotion: promotion 
+            };
+
+            // If it's a pawn move to the promotion rank and promotion is selected, append the promotion piece
+            if (promotion && ((firstClick.piece === '♟' && row === 0) || (firstClick.piece === '♙' && row === 7))) {
+                move.to += promotion;  // e.g., h7h8q
+            }
+
+            ws.send(JSON.stringify(move)); // Send the move to the server (use proper move format)
+            updateMoveHistory(move);
+
+            // Reset the highlight and firstClick
+            clickedCell.classList.add('highlight');
+            firstClick = null;
+            resetHighlights();
+        }
+    }
+
+    // Convert row/col to chess notation (like e2, e4, etc.)
+    function toChessNotation(row, col) {
+        const file = String.fromCharCode(97 + col); // Convert column to letter (0 = a, 1 = b, ...)
+        const rank = 8 - row; // Row is inverted (0 = 8, 1 = 7, ...)
+        return file + rank;
+    }
+
+    // Reset all cell highlights
+    function resetHighlights() {
+        const squares = document.querySelectorAll('.square');
+        squares.forEach(square => square.classList.remove('highlight'));
+    }
+
+    // Get the promotion piece
+    function getPromotion() {
+        const promotionRadios = document.getElementsByName('promotion');
+        for (let radio of promotionRadios) {
+            if (radio.checked) return radio.value;
+        }
+        return null;
+    }
+
+    // WebSocket message handling
+    ws.onmessage = function(event) {
+        const response = JSON.parse(event.data);
+
+        // Handle error messages
+        if (response.error) {
+            errorMessage.textContent = response.error;
+            errorMessage.style.display = 'block';  // Show error message
+            resetHighlights();
+            return;
+        }
+
+        // If move was successful, reset the error message
+        errorMessage.style.display = 'none'; // Hide error message
+
+        currentFEN = response.fen;  // Receive updated FEN after AI's move
+        updateMoveHistory(response.move);
+        initBoard(currentFEN);  // Re-render the board with the new FEN
+    };
+
+    // Update move history
+    function updateMoveHistory(move) {
+        moveHistoryList.push(move);
+        moveHistory.innerHTML = `<p>Move History:</p><ul>` + moveHistoryList.map(m => `<li>${m.from} to ${m.to}</li>`).join('') + `</ul>`;
+    }
+
+    // Initial render of the board
+    initBoard(currentFEN);
+</script>
+
+</body>
+</html>
