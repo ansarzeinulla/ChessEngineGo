@@ -21,6 +21,7 @@ type UCIEngine struct {
 
 func NewUCIEngine(path string) *UCIEngine {
 	cmd := exec.Command(path)
+	fmt.Println("W")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		log.Fatal(err)
@@ -72,7 +73,7 @@ func (e *UCIEngine) Expect(substr string) {
 func (e *UCIEngine) GetBestMove(fen string) string {
 	pos := "position fen " + fen
 	e.Send(pos)
-	e.Send("go")
+	e.Send("go nodes 1")
 
 	for e.scanner.Scan() {
 		line := e.scanner.Text()
