@@ -8,61 +8,6 @@ import (
 	"github.com/notnil/chess"
 )
 
-type Engine struct {
-	game *chess.Game
-}
-
-func NewEngine() *Engine {
-	return &Engine{game: chess.NewGame()}
-}
-
-// === UCI Engine Core ===
-
-func (e *Engine) HandleInput(input string) {
-	switch {
-	case input == "uci":
-		fmt.Println("id name AlphaBetaEngine")
-		fmt.Println("id author You")
-		fmt.Println("uciok")
-	case input == "isready":
-		fmt.Println("readyok")
-	case strings.HasPrefix(input, "position"):
-		e.setPosition(input)
-	case input[:2] == "go":
-		e.makeMove()
-	case input == "quit":
-		os.Exit(0)
-	}
-	os.Stdout.Sync()
-}
-
-func (e *Engine) setPosition(cmd string) {
-	tokens := strings.Fields(cmd)
-	if len(tokens) < 2 {
-		e.game = chess.NewGame()
-		return
-	}
-
-	switch tokens[1] {
-	case "startpos":
-		e.game = chess.NewGame()
-	case "fen":
-		fenParts := []string{}
-		i := 2
-		for i < len(tokens) && tokens[i] != "moves" {
-			fenParts = append(fenParts, tokens[i])
-			i++
-		}
-		fenStr := strings.Join(fenParts, " ")
-		pos, err := chess.FEN(fenStr)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "invalid FEN:", err)
-			e.game = chess.NewGame()
-		} else {
-			e.game = chess.NewGame(pos)
-		}
-	}
-}
 
 func (e *Engine) makeMove() {
 	bestScore := -999999
@@ -140,6 +85,8 @@ func adjustedDepth(depth, ply int, move *chess.Move) int {
 
 // === Evaluation ===
 
+// === Evaluation ===
+
 func evaluate(pos *chess.Position) int {
 	score := 0
 	board := pos.Board()
@@ -150,15 +97,154 @@ func evaluate(pos *chess.Position) int {
 			continue
 		}
 
-		val := pieceValue(piece.Type())
-		if piece.Color() == chess.White {
-			score += val
-		} else {
-			score -= val
+		// Evaluate each piece individually
+		switch piece.Type() {
+		case chess.Pawn:
+			score += evaluatePawn(board, sq, piece)
+		case chess.Knight:
+			score += evaluateKnight(board, sq, piece)
+		case chess.Bishop:
+			score += evaluateBishop(board, sq, piece)
+		case chess.Rook:
+			score += evaluateRook(board, sq, piece)
+		case chess.Queen:
+			score += evaluateQueen(board, sq, piece)
+		case chess.King:
+			score += evaluateKing(board, sq, piece)
 		}
 	}
+
 	return score
 }
+
+// === Pawn Evaluation ===
+func evaluatePawn(board *chess.Board, sq chess.Square, piece chess.Piece) int {
+	// Basic value of the pawn
+	value := pieceValue(piece.Type())
+
+	// Pawn structure: Isolated pawn penalty or passed pawn bonus
+	// For simplicity, we're assuming the pawn's position matters in some cases
+	if piece.Color() == chess.White {
+		// Example: Pawns on the 7th rank are better
+		if sq.Rank() == chess.Rank7 {
+			value += 50
+		}
+	} else {
+		// For black pawns, pawns on the 2nd rank are weaker
+		if sq.Rank() == chess.Rank2 {
+			value -= 50
+		}
+	}
+	return value
+}
+
+// === Knight Evaluation ===
+func evaluateKnight(board *chess.Board, sq chess.Square, piece chess.Piece) int {
+	value := pieceValue(piece.Type())
+
+	// Knights are more valuable in the center (for example)
+	if sq.File() > chess.FileD && sq.File() < chess.FileE && sq.Rank() > chess.Rank3 && sq.Rank() < chess.Rank6 {
+		value += 50 // Centralized knight bonus
+	}
+
+	return value
+}
+
+// === Bishop Evaluation ===
+func evaluateBishop(board *chess.Board, sq chess.Square, piece chess.Piece) int {
+	value := pieceValue(piece.Type())
+
+	// Bishops are more powerful on open boards
+	// (i.e., when there are fewer pawns blocking their movement)
+	if piece.Color() == chess.White {
+		if board.Piece(sq + 8) == chess.NoPiece && board.Piece(sq - 8) == chess.NoPiece {
+			value += 30 // Open diagonals bonus
+		}
+	} else {
+		if board.Piece(sq + 8) == chess.NoPiece && board.Piece(sq - 8) == chess.NoPiece {
+			value -= 30 // Open diagonals penalty
+		}
+	}
+
+	return value
+}
+
+// === Rook Evaluation ===
+
+func evaluateRook(board *chess.Board, sq chess.Square, piece chess.Piece) int {
+	value := pieceValue(piece.Type())
+
+	// Rooks are more valuable on open files
+	// (i.e., when there are no pawns on the file)
+	if piece.Color() == chess.White {
+		// Check if the file is open by scanning through the entire file
+		openFile := true
+		for rank := chess.Rank1; rank <= chess.Rank8; rank++ {
+			// Convert file to int and calculate the square index
+			checkSquare := chess.Square(int(sq.File())*8 + int(rank)) // Combine file and rank to form a square
+			if board.Piece(checkSquare) != chess.NoPiece {
+				openFile = false
+				break
+			}
+		}
+		if openFile {
+			value += 40 // Rook on open file bonus
+		}
+	} else {
+		// Same logic for black rooks
+		openFile := true
+		for rank := chess.Rank1; rank <= chess.Rank8; rank++ {
+			// Convert file to int and calculate the square index
+			checkSquare := chess.Square(int(sq.File())*8 + int(rank)) // Combine file and rank to form a square
+			if board.Piece(checkSquare) != chess.NoPiece {
+				openFile = false
+				break
+			}
+		}
+		if openFile {
+			value -= 40 // Rook on open file penalty
+		}
+	}
+
+	return value
+}
+
+
+
+// === Queen Evaluation ===
+func evaluateQueen(board *chess.Board, sq chess.Square, piece chess.Piece) int {
+	value := pieceValue(piece.Type())
+
+	// Queens are powerful in the center
+	if sq.File() > chess.FileD && sq.File() < chess.FileE && sq.Rank() > chess.Rank3 && sq.Rank() < chess.Rank6 {
+		value += 100 // Queen centralization bonus
+	}
+
+	return value
+}
+
+// === King Evaluation ===
+func evaluateKing(board *chess.Board, sq chess.Square, piece chess.Piece) int {
+	value := pieceValue(piece.Type())
+
+	// King safety: Penalize if the king is in the center of the board
+	if sq.File() > chess.FileC && sq.File() < chess.FileF && sq.Rank() > chess.Rank3 && sq.Rank() < chess.Rank6 {
+		value -= 100 // King in the center penalty
+	}
+
+	// King endgame: In the endgame, the king becomes more active, so it's rewarded
+	// For simplicity, let's just assume that if depth > 20, it's an endgame phase
+	// (You would need to pass this information into the evaluation function or calculate it outside)
+	// A simplified way to determine this might be to just check the position of the king
+	if piece.Color() == chess.White && sq.Rank() > chess.Rank4 {
+		value += 50 // King endgame bonus for white
+	} else if piece.Color() == chess.Black && sq.Rank() < chess.Rank5 {
+		value -= 50 // King endgame penalty for black
+	}
+
+	return value
+}
+
 
 func pieceValue(t chess.PieceType) int {
 	switch t {
@@ -189,33 +275,4 @@ func min(a, b int) int {
 		return a
 	}
 	return b
-}
-
-func NewScanner(r *os.File) *Scanner {
-	return &Scanner{r: r}
-}
-
-type Scanner struct {
-	r   *os.File
-	buf []byte
-}
-
-func (s *Scanner) Scan() bool {
-	s.buf = make([]byte, 0, 4096)
-	var b [1]byte
-	for {
-		_, err := s.r.Read(b[:])
-		if err != nil {
-			return false
-		}
-		if b[0] == '\n' {
-			break
-		}
-		s.buf = append(s.buf, b[0])
-	}
-	return true
-}
-
-func (s *Scanner) Text() string {
-	return string(s.buf)
 }

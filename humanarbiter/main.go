@@ -76,7 +76,7 @@ func (e *UCIEngine) Expect(substr string) {
 func (e *UCIEngine) GetBestMove(fen string) string {
 	pos := "position fen " + fen
 	e.Send(pos)
-	e.Send("go nodes 1")
+	e.Send("go nodes 2")
 
 	// Set a timeout for engine response
 	timeout := time.After(1 * time.Second)  // Adjust as necessary
